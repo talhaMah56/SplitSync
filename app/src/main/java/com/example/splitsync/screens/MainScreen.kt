@@ -1,24 +1,28 @@
-// ============================================
-// FILE: MainScreen.kt
-// Location: app/src/main/java/com/example/splitsync/screens/MainScreen.kt
-// ============================================
 package com.example.splitsync.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.splitsync.data.DataManager
+import com.example.splitsync.data.Trip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,9 +136,8 @@ fun MainScreen(
                 ) {
                     items(trips) { trip ->
                         TripCard(
-                            tripName = trip.name,
-                            location = trip.location,
-                            participantsCount = trip.participants.size,
+                            trip = trip,
+                            dataManager = dataManager,
                             onClick = { onNavigateToTrip(trip.id) }
                         )
                     }
@@ -146,54 +149,114 @@ fun MainScreen(
 
 @Composable
 fun TripCard(
-    tripName: String,
-    location: String,
-    participantsCount: Int,
+    trip: Trip,
+    dataManager: DataManager,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    var showPhotoOptions by remember { mutableStateOf(false) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            dataManager.updateTripPhoto(trip.id, it.toString(), context)
+        }
+    }
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.LocationOn,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = tripName,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = location,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "$participantsCount participants",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Column {
+            // Photo section (if exists)
+            trip.photoUri?.let { photoUri ->
+                AsyncImage(
+                    model = Uri.parse(photoUri),
+                    contentDescription = "Trip photo",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
+                    contentScale = ContentScale.Crop
                 )
             }
 
-            Icon(
-                Icons.Default.KeyboardArrowRight,
-                contentDescription = "View trip"
-            )
+            // Trip info section
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = trip.name,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = trip.location,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${trip.participants.size} participants",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Photo action button
+                IconButton(
+                    onClick = { showPhotoOptions = true }
+                ) {
+                    Icon(
+                        if (trip.photoUri != null) Icons.Default.Edit else Icons.Default.AddAPhoto,
+                        contentDescription = if (trip.photoUri != null) "Change photo" else "Add photo",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Icon(
+                    Icons.Default.KeyboardArrowRight,
+                    contentDescription = "View trip"
+                )
+            }
         }
+    }
+
+    // Photo options dialog
+    if (showPhotoOptions) {
+        AlertDialog(
+            onDismissRequest = { showPhotoOptions = false },
+            title = { Text("Trip Photo") },
+            text = { Text("Choose a memorable photo for this trip") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        imagePickerLauncher.launch("image/*")
+                        showPhotoOptions = false
+                    }
+                ) {
+                    Text("Select Photo")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPhotoOptions = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
