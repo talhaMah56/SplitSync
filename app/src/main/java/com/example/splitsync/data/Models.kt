@@ -15,7 +15,8 @@ data class Trip(
     val description: String,
     val participants: List<String>,
     val createdBy: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val photoUri: String? = null
 )
 
 data class Expense(

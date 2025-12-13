@@ -1,7 +1,3 @@
-// ============================================
-// FILE 4: DataManager.kt
-// Location: app/src/main/java/com/example/splitsync/data/DataManager.kt
-// ============================================
 package com.example.splitsync.data
 
 import android.content.Context
@@ -34,6 +30,16 @@ class DataManager {
     fun getTrips(): List<Trip> = trips.filter { it.participants.contains(currentUserEmail) }
 
     fun getTrip(tripId: String): Trip? = trips.firstOrNull { it.id == tripId }
+
+    // NEW: Update trip photo
+    fun updateTripPhoto(tripId: String, photoUri: String, context: Context) {
+        val index = trips.indexOfFirst { it.id == tripId }
+        if (index != -1) {
+            val trip = trips[index]
+            trips[index] = trip.copy(photoUri = photoUri)
+            saveTripsToCSV(context)
+        }
+    }
 
     fun saveExpense(expense: Expense, context: Context) {
         expenses.add(expense)
@@ -72,10 +78,10 @@ class DataManager {
 
     private fun saveTripsToCSV(context: Context) {
         val file = File(context.filesDir, "trips.csv")
-        file.writeText("id,name,location,description,participants,createdBy,createdAt\n")
+        file.writeText("id,name,location,description,participants,createdBy,createdAt,photoUri\n")
         trips.forEach { trip ->
             val participants = trip.participants.joinToString(";")
-            file.appendText("${trip.id},${trip.name},${trip.location},${trip.description},$participants,${trip.createdBy},${trip.createdAt}\n")
+            file.appendText("${trip.id},${trip.name},${trip.location},${trip.description},$participants,${trip.createdBy},${trip.createdAt},${trip.photoUri ?: ""}\n")
         }
     }
 
@@ -116,7 +122,19 @@ class DataManager {
                 val parts = line.split(",")
                 if (parts.size >= 7) {
                     val participants = parts[4].split(";")
-                    trips.add(Trip(parts[0], parts[1], parts[2], parts[3], participants, parts[5], parts[6].toLongOrNull() ?: 0))
+                    val photoUri = if (parts.size >= 8) parts[7].ifEmpty { null } else null
+                    trips.add(
+                        Trip(
+                            parts[0],
+                            parts[1],
+                            parts[2],
+                            parts[3],
+                            participants,
+                            parts[5],
+                            parts[6].toLongOrNull() ?: 0,
+                            photoUri
+                        )
+                    )
                 }
             }
         }
