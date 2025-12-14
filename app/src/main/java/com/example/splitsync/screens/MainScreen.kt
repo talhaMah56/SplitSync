@@ -3,10 +3,13 @@ package com.example.splitsync.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -155,12 +158,13 @@ fun TripCard(
 ) {
     val context = LocalContext.current
     var showPhotoOptions by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            dataManager.updateTripPhoto(trip.id, it.toString(), context)
+            dataManager.addTripPhoto(trip.id, it.toString(), context)
         }
     }
 
@@ -169,17 +173,27 @@ fun TripCard(
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column {
-            // Photo section (if exists)
-            trip.photoUri?.let { photoUri ->
-                AsyncImage(
-                    model = Uri.parse(photoUri),
-                    contentDescription = "Trip photo",
+            // Photo carousel (if photos exist)
+            if (trip.photoUris.isNotEmpty()) {
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)),
-                    contentScale = ContentScale.Crop
-                )
+                        .height(180.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    items(trip.photoUris) { photoUri ->
+                        AsyncImage(
+                            model = Uri.parse(photoUri),
+                            contentDescription = "Trip photo",
+                            modifier = Modifier
+                                .width(280.dp)
+                                .height(164.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
             }
 
             // Trip info section
@@ -210,11 +224,28 @@ fun TripCard(
                         fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(
-                        text = "${trip.participants.size} participants",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "${trip.participants.size} participants",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (trip.photoUris.isNotEmpty()) {
+                            Text(
+                                text = "•",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${trip.photoUris.size} photos",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
                 // Photo action button
@@ -222,9 +253,20 @@ fun TripCard(
                     onClick = { showPhotoOptions = true }
                 ) {
                     Icon(
-                        if (trip.photoUri != null) Icons.Default.Edit else Icons.Default.AddAPhoto,
-                        contentDescription = if (trip.photoUri != null) "Change photo" else "Add photo",
+                        Icons.Default.AddAPhoto,
+                        contentDescription = "Add photo",
                         tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // Delete trip button (red trash can)
+                IconButton(
+                    onClick = { showDeleteDialog = true }
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete trip",
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
 
@@ -240,8 +282,8 @@ fun TripCard(
     if (showPhotoOptions) {
         AlertDialog(
             onDismissRequest = { showPhotoOptions = false },
-            title = { Text("Trip Photo") },
-            text = { Text("Choose a memorable photo for this trip") },
+            title = { Text("Add Trip Photo") },
+            text = { Text("Select a photo from your gallery to add to this trip") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -254,6 +296,42 @@ fun TripCard(
             },
             dismissButton = {
                 TextButton(onClick = { showPhotoOptions = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Delete Trip?") },
+            text = {
+                Text("Are you sure you want to delete \"${trip.name}\"? This will also delete all expenses associated with this trip. This action cannot be undone.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        dataManager.deleteTrip(trip.id, context)
+                        showDeleteDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
                     Text("Cancel")
                 }
             }
