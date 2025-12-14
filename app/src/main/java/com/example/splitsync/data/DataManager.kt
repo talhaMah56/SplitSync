@@ -31,14 +31,34 @@ class DataManager {
 
     fun getTrip(tripId: String): Trip? = trips.firstOrNull { it.id == tripId }
 
-    // NEW: Update trip photo
-    fun updateTripPhoto(tripId: String, photoUri: String, context: Context) {
+    // Add photo to trip's photo list
+    fun addTripPhoto(tripId: String, photoUri: String, context: Context) {
         val index = trips.indexOfFirst { it.id == tripId }
         if (index != -1) {
             val trip = trips[index]
-            trips[index] = trip.copy(photoUri = photoUri)
+            val updatedPhotos = trip.photoUris.toMutableList().apply { add(photoUri) }
+            trips[index] = trip.copy(photoUris = updatedPhotos)
             saveTripsToCSV(context)
         }
+    }
+
+    // Remove photo from trip
+    fun removeTripPhoto(tripId: String, photoUri: String, context: Context) {
+        val index = trips.indexOfFirst { it.id == tripId }
+        if (index != -1) {
+            val trip = trips[index]
+            val updatedPhotos = trip.photoUris.toMutableList().apply { remove(photoUri) }
+            trips[index] = trip.copy(photoUris = updatedPhotos)
+            saveTripsToCSV(context)
+        }
+    }
+
+    // Delete trip and its expenses
+    fun deleteTrip(tripId: String, context: Context) {
+        trips.removeAll { it.id == tripId }
+        expenses.removeAll { it.tripId == tripId }
+        saveTripsToCSV(context)
+        saveExpensesToCSV(context)
     }
 
     fun saveExpense(expense: Expense, context: Context) {
@@ -78,10 +98,11 @@ class DataManager {
 
     private fun saveTripsToCSV(context: Context) {
         val file = File(context.filesDir, "trips.csv")
-        file.writeText("id,name,location,description,participants,createdBy,createdAt,photoUri\n")
+        file.writeText("id,name,location,description,participants,createdBy,createdAt,photoUris\n")
         trips.forEach { trip ->
             val participants = trip.participants.joinToString(";")
-            file.appendText("${trip.id},${trip.name},${trip.location},${trip.description},$participants,${trip.createdBy},${trip.createdAt},${trip.photoUri ?: ""}\n")
+            val photoUris = trip.photoUris.joinToString(";")
+            file.appendText("${trip.id},${trip.name},${trip.location},${trip.description},$participants,${trip.createdBy},${trip.createdAt},$photoUris\n")
         }
     }
 
@@ -122,7 +143,11 @@ class DataManager {
                 val parts = line.split(",")
                 if (parts.size >= 7) {
                     val participants = parts[4].split(";")
-                    val photoUri = if (parts.size >= 8) parts[7].ifEmpty { null } else null
+                    val photoUris = if (parts.size >= 8 && parts[7].isNotEmpty()) {
+                        parts[7].split(";")
+                    } else {
+                        emptyList()
+                    }
                     trips.add(
                         Trip(
                             parts[0],
@@ -132,7 +157,7 @@ class DataManager {
                             participants,
                             parts[5],
                             parts[6].toLongOrNull() ?: 0,
-                            photoUri
+                            photoUris
                         )
                     )
                 }

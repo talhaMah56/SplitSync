@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +45,7 @@ fun TripDetailScreen(
     val balances = dataManager.calculateBalances(tripId)
     var showBalances by remember { mutableStateOf(false) }
     var showPhotoOptions by remember { mutableStateOf(false) }
+    var photoToDelete by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         dataManager.loadData(context)
@@ -53,7 +55,7 @@ fun TripDetailScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            dataManager.updateTripPhoto(tripId, it.toString(), context)
+            dataManager.addTripPhoto(tripId, it.toString(), context)
         }
     }
 
@@ -96,24 +98,57 @@ fun TripDetailScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Trip Photo Header (NEW)
+            // Trip Photo Carousel
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Box {
-                        if (trip.photoUri != null) {
-                            AsyncImage(
-                                model = Uri.parse(trip.photoUri),
-                                contentDescription = "Trip photo",
+                        if (trip.photoUris.isNotEmpty()) {
+                            LazyRow(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(200.dp),
-                                contentScale = ContentScale.Crop
-                            )
+                                    .height(250.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(12.dp)
+                            ) {
+                                items(trip.photoUris) { photoUri ->
+                                    Box {
+                                        AsyncImage(
+                                            model = Uri.parse(photoUri),
+                                            contentDescription = "Trip photo",
+                                            modifier = Modifier
+                                                .width(350.dp)
+                                                .height(226.dp)
+                                                .clip(RoundedCornerShape(12.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+
+                                        // Delete button for each photo
+                                        IconButton(
+                                            onClick = { photoToDelete = photoUri },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(8.dp)
+                                                .size(32.dp)
+                                                .background(
+                                                    Color.Black.copy(alpha = 0.5f),
+                                                    CircleShape
+                                                )
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete photo",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(200.dp)
+                                    .height(250.dp)
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -129,14 +164,20 @@ fun TripDetailScreen(
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        "Add a trip photo",
+                                        "No trip photos yet",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Tap the + button to add",
+                                        fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
 
-                        // Floating add/edit photo button
+                        // Floating add photo button
                         FloatingActionButton(
                             onClick = { showPhotoOptions = true },
                             modifier = Modifier
@@ -146,9 +187,27 @@ fun TripDetailScreen(
                             containerColor = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Icon(
-                                if (trip.photoUri != null) Icons.Default.Edit else Icons.Default.AddAPhoto,
-                                contentDescription = if (trip.photoUri != null) "Change photo" else "Add photo"
+                                Icons.Default.AddAPhoto,
+                                contentDescription = "Add photo"
                             )
+                        }
+
+                        // Photo counter badge
+                        if (trip.photoUris.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(16.dp),
+                                color = Color.Black.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "${trip.photoUris.size} ${if (trip.photoUris.size == 1) "photo" else "photos"}",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -248,8 +307,8 @@ fun TripDetailScreen(
     if (showPhotoOptions) {
         AlertDialog(
             onDismissRequest = { showPhotoOptions = false },
-            title = { Text("Trip Photo") },
-            text = { Text("Choose a memorable photo for this trip") },
+            title = { Text("Add Trip Photo") },
+            text = { Text("Select a photo from your gallery to add to this trip") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -262,6 +321,33 @@ fun TripDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showPhotoOptions = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    photoToDelete?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { photoToDelete = null },
+            title = { Text("Delete Photo") },
+            text = { Text("Are you sure you want to remove this photo from the trip?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        dataManager.removeTripPhoto(tripId, uri, context)
+                        photoToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { photoToDelete = null }) {
                     Text("Cancel")
                 }
             }
