@@ -8,7 +8,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,92 +26,76 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
+import kotlin.let
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+
     var currentLocation by remember { mutableStateOf<LatLng?>(null) }
     var hasPermission by remember { mutableStateOf(false) }
+    var permissionRequestInFlight by remember { mutableStateOf(false) }
+
     var isMapLoaded by remember { mutableStateOf(false) }
-    var mapLoadError by remember { mutableStateOf<String?>(null) }
     var showTimeout by remember { mutableStateOf(false) }
 
-    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
-    var locationFetched by remember { mutableStateOf(false) }
-
-    // Default to Philadelphia (fallback)
+    // Default to Philadelphia
     val defaultPosition = LatLng(39.9526, -75.1652)
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(defaultPosition, 12f)
     }
 
-    // Function to get and set location
+    var locationFetched by remember { mutableStateOf(false) }
+
     fun fetchAndSetLocation() {
         if (!hasPermission) return
         try {
-            fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
-                location?.let {
-                    val latLng = LatLng(it.latitude, it.longitude)
-                    currentLocation = latLng
-                    if (!locationFetched) {
-                        cameraPositionState.position = CameraPosition.fromLatLngZoom(latLng, 15f)
-                        locationFetched = true
-                        Log.d("MapScreen", "Location centered: $latLng")
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { location: Location? ->
+                    location?.let {
+                        val latLng = LatLng(it.latitude, it.longitude)
+                        currentLocation = latLng
+                        if (!locationFetched) {
+                            cameraPositionState.position =
+                                CameraPosition.fromLatLngZoom(latLng, 15f)
+                            locationFetched = true
+                        }
                     }
-                } ?: run {
-                    Log.d("MapScreen", "Location is null, using default")
                 }
-            }.addOnFailureListener { e ->
-                Log.e("MapScreen", "Failed to get location", e)
-            }
+                .addOnFailureListener { e ->
+                    Log.e("MapScreen", "Failed to get location", e)
+                }
         } catch (e: SecurityException) {
             Log.e("MapScreen", "Security exception", e)
-        }
-    }
-
-    // Timeout checker
-    LaunchedEffect(Unit) {
-        delay(5000) // 5 second timeout
-        if (!isMapLoaded) {
-            showTimeout = true
-            Log.e("MapScreen", "Map failed to load within timeout")
         }
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
+        permissionRequestInFlight = false
         hasPermission = isGranted
-        if (isGranted) {
-            fetchAndSetLocation()
-        }
+        if (isGranted) fetchAndSetLocation()
     }
 
+    // Initial permission check (don’t auto-launch dialog here)
     LaunchedEffect(Unit) {
-        Log.d("MapScreen", "Initializing map...")
-        when {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                hasPermission = true
-                Log.d("MapScreen", "Permission already granted, fetching location")
-                fetchAndSetLocation()
-            }
-            else -> {
-                Log.d("MapScreen", "Requesting permission")
-                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-        }
+        hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) fetchAndSetLocation()
     }
 
-    // Also fetch location when map is loaded
-    LaunchedEffect(isMapLoaded) {
-        if (isMapLoaded && hasPermission && !locationFetched) {
-            Log.d("MapScreen", "Map loaded, fetching location")
-            fetchAndSetLocation()
-        }
+    // Timeout guard that doesn’t run while permission dialog is active
+    LaunchedEffect(permissionRequestInFlight) {
+        showTimeout = false
+        delay(12000)
+        if (!isMapLoaded && !permissionRequestInFlight) showTimeout = true
     }
 
     Scaffold(
@@ -116,17 +104,7 @@ fun MapScreen(onBack: () -> Unit) {
                 title = { Text("Map") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, "Back")
-                    }
-                },
-                actions = {
-                    if (!isMapLoaded && !showTimeout) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .size(24.dp),
-                            strokeWidth = 2.dp
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -136,175 +114,110 @@ fun MapScreen(onBack: () -> Unit) {
                 FloatingActionButton(
                     onClick = {
                         currentLocation?.let {
-                            cameraPositionState.position = CameraPosition.fromLatLngZoom(it, 15f)
-                        } ?: run {
-                            // Try fetching location again
-                            fetchAndSetLocation()
-                        }
+                            cameraPositionState.position =
+                                CameraPosition.fromLatLngZoom(it, 15f)
+                        } ?: fetchAndSetLocation()
                     }
                 ) {
-                    Icon(Icons.Default.Place, "My Location")
+                    Icon(Icons.Default.Place, contentDescription = "My Location")
                 }
             }
         }
-    ) { paddingValues ->
+    ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(padding)
         ) {
+            // ✅ Map is in normal UI tree (NOT inside another GoogleMap content lambda)
+            DroppablePinsMap(
+                cameraPositionState = cameraPositionState,
+                hasPermission = hasPermission,
+                onMapLoaded = {
+                    isMapLoaded = true
+                    showTimeout = false
+                    if (hasPermission && !locationFetched) fetchAndSetLocation()
+                }
+            )
+
+            // ✅ Timeout overlay (UI composables are OUTSIDE map)
             if (showTimeout && !isMapLoaded) {
-                // Timeout error view
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "Error",
-                        modifier = Modifier.size(100.dp),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text(
-                        "Map Failed to Load",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                "Possible causes:",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "• Missing or invalid Google Maps API key\n" +
-                                        "• Maps SDK for Android not enabled\n" +
-                                        "• Network connectivity issues\n" +
-                                        "• Emulator Google Play Services outdated",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    OutlinedButton(
-                        onClick = {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Warning",
+                            modifier = Modifier.size(80.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Map is taking too long to load",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Check API key / Play Services / network. Then retry.",
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedButton(onClick = {
+                            // just reset flags; map stays mounted
                             showTimeout = false
                             isMapLoaded = false
+                        }) {
+                            Text("Retry")
                         }
-                    ) {
-                        Icon(Icons.Default.Refresh, "Retry")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Retry")
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        "Check Logcat for detailed error messages",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
                 }
-            } else {
-                GoogleMap(
+            }
+
+            // ✅ Permission overlay (UI composables are OUTSIDE map)
+            if (!hasPermission) {
+                Surface(
                     modifier = Modifier.fillMaxSize(),
-                    cameraPositionState = cameraPositionState,
-                    properties = MapProperties(
-                        isMyLocationEnabled = hasPermission,
-                        mapType = MapType.NORMAL
-                    ),
-                    uiSettings = MapUiSettings(
-                        zoomControlsEnabled = false,
-                        myLocationButtonEnabled = false,
-                        compassEnabled = true,
-                        mapToolbarEnabled = true,
-                        zoomGesturesEnabled = true,
-                        scrollGesturesEnabled = true,
-                        tiltGesturesEnabled = true,
-                        rotationGesturesEnabled = true
-                    ),
-                    onMapLoaded = {
-                        isMapLoaded = true
-                        showTimeout = false
-                        Log.d("MapScreen", "✅ Map loaded successfully!")
-                    }
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 ) {
-                    currentLocation?.let { location ->
-                        Marker(
-                            state = MarkerState(position = location),
-                            title = "You are here",
-                            snippet = "Current location"
-                        )
-                    }
-                }
-
-                // Permission overlay
-                if (!hasPermission) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Place,
-                                contentDescription = "Location",
-                                modifier = Modifier.size(100.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Text(
-                                "Location Permission Required",
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Text(
-                                "To show your location on the map, please grant location permission.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            Button(
-                                onClick = {
-                                    locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                                }
-                            ) {
-                                Icon(Icons.Default.LocationOn, "Grant Permission")
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Grant Permission")
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = "Location",
+                            modifier = Modifier.size(80.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text("Location Permission Required", style = MaterialTheme.typography.headlineSmall)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Long-press to drop pins. To show your current location, grant permission.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            enabled = !permissionRequestInFlight,
+                            onClick = {
+                                permissionRequestInFlight = true
+                                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                             }
+                        ) {
+                            Text(if (permissionRequestInFlight) "Requesting..." else "Grant Permission")
                         }
                     }
                 }
